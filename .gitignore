@@ -1,0 +1,11 @@
+*#*#
+*~
+*.plt
+ebin
+test/*.beam
+doc/
+.eunit/*
+logs/*
+ct.coverdata
+deps
+.rebar/*
