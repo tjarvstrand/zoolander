@@ -101,35 +101,35 @@ format_expression_test_() ->
 
   ].
 
-format_string_test_() ->
-  [ ?assertFmt("\"\"")
+%% format_string_test_() ->
+%%   [ ?assertFmt("\"\"")
 
-  , ?assertFmt("\"a\"")
+%%   , ?assertFmt("\"a\"")
 
-  , ?assertFmt( "\"a\"+\n"
-                "  \"a\""
-              , [{expressions, 0}])
+%%   , ?assertFmt( "\"a\"+\n"
+%%                 "\"a\""
+%%               , [{expressions, 0}])
 
-  , ?assertFmt( "\"a\"\n"
-                "  \"a\"\n"
-                "  \"a\"\n"
-                "  \"a\""
-              , [{expressions, 0}])
+%%   , ?assertFmt( "\"a\"\n"
+%%                 "\"a\"\n"
+%%                 "\"a\"\n"
+%%                 "\"a\""
+%%               , [{expressions, 0}])
 
-  , ?assertFmt( "A = \"a\"\n"
-                "      \"a\""
-              , [{expressions, 0}])
+%%   , ?assertFmt( "A = \"a\"\n"
+%%                 "    \"a\""
+%%               , [{expressions, 0}])
 
-  , ?assertFmt( "A = \"a\"\n"
-                "      \"a\"\n"
-                "      \"a\"\n"
-                "      \"a\""
-              , [{expressions, 0}])
+%%   , ?assertFmt( "A = \"a\"\n"
+%%                 "    \"a\"\n"
+%%                 "    \"a\"\n"
+%%                 "    \"a\""
+%%               , [{expressions, 0}])
 
-  , ?assertFmt("[\"a\"\n"
-               "   \"a\"]",
-               [{expressions, 0}])
-  ].
+%%   , ?assertFmt("[\"a\"\n"
+%%                " \"a\"]",
+%%                [{expressions, 0}])
+%%   ].
 
 format_parameter_list_test_() ->
   [ ?assertFmt( "(A, B)"
@@ -285,9 +285,10 @@ format_list_test_() ->
                 "]"
               , [{expressions, 0}])
 
+  , ?assertFmt( "[A,B,\n"
+                " C]"
+              , [{expressions, 0}])
   ].
-
-
 
 
 format_list_comprehension_test_() ->
@@ -335,10 +336,6 @@ format_block_test_() ->
 
   , ?assertFmt( "end,\n"
                 "b"
-              , [{expressions, 0}])
-
-  , ?assertFmt( "  a ->\n"
-                "    b\n"
               , [{expressions, 0}])
 
   , ?assertFmt( "case x of\n"
@@ -433,10 +430,6 @@ format_clause_test_() ->
                 "   b"
               , [{clause, 0}, {clauses, 0}])
 
-  , ?assertFmt( "a -> a;\n"
-                "b -> c"
-              , [{clause, 0}, {clauses, 0}])
-
   , ?assertFmt( "foo->\n"
                 "  a"
               , [{clause, 0}, {clauses, 0}, {{block, 'case'}, 0}])
@@ -504,7 +497,7 @@ format_function_test_() ->
                 "end"
               , [{expressions, 0}])
 
-  , ?assertFmt( "fun() when A =:= B;"
+  , ?assertFmt( "fun() when A =:= B;\n"
                 "           C =:= D ->\n"
                 "  a\n"
                 "end"
