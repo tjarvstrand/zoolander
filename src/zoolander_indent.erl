@@ -193,6 +193,13 @@ level(IndentWidth, Preceeding, Following) ->
       {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['receive']
                                                         , Preceeding),
       StartCol - 1;
+    [#{type := Type}|_] when Type =:= string ->
+      case Preceeding of
+        [#{type := string, start := {_, StringStartCol}}|_] ->
+          StringStartCol - 1;
+        _ ->
+          indent_normal_expr(IndentWidth, Preceeding)
+      end;
     [#{type := Type} = Token|Rest] when Type =:= 'catch' ->
       case forward_to( ['end', 'catch'], [Token|Preceeding], Rest) of
         {ok, {_, [#{type := 'end'}|_]}} -> %% Indent from try
@@ -200,19 +207,12 @@ level(IndentWidth, Preceeding, Following) ->
                                                             , Preceeding),
           StartCol - 1;
         _ -> %% Indent as normal expression,
-          case start_of_expr(Preceeding) of
-            {error, _} ->
-              IndentWidth;
-            {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
-              StartCol - 1 + IndentWidth;
-            {ok, {_, [#{start := {_, StartCol}}|_]}} ->
-              StartCol - 1 + IndentWidth
-          end
+          indent_normal_expr(IndentWidth, Preceeding)
       end;
     [#{type := dot}|_] ->
       0;
     _ ->
-      case drop_non_code_tokens(Preceeding) of
+      case Preceeding of
         [#{type := Type}|Rest] when Type =:= '=' ->
           lvl_at_start_of_expr(Rest) + IndentWidth;
         [#{type := Type}|Rest] when Type =:= '|' orelse
@@ -279,25 +279,28 @@ level(IndentWidth, Preceeding, Following) ->
           0;
         [#{type := dot}|_] ->
           0;
-        Tokens ->
-          io:fwrite(user, <<"~p ~p ~p~n">>, [self(), ?MODULE, ?LINE]),
-          case start_of_expr(Tokens) of
-            {error, _} ->
-              IndentWidth;
-            {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
-              StartCol - 1 + IndentWidth;
-            {ok, {Preceeding1, [#{type := '(', start := {_, StartCol}}|_]}} ->
-              case start_of_call(Preceeding1) of
-                undefined ->
-                  StartCol - 1 + IndentWidth;
-                #{start := {_, FunRefStartCol}} ->
-                  FunRefStartCol - 1 + IndentWidth
-              end;
-            {ok, {A, [#{start := {_, StartCol}}|_]}} ->
-              io:fwrite(user, <<"~p ~p ~p: A = ~p~n">>, [self(), ?MODULE, ?LINE, A]),
-              StartCol - 1 + IndentWidth
-          end
+        _ ->
+          indent_normal_expr(IndentWidth, Preceeding)
       end
+  end.
+
+
+indent_normal_expr(IndentWidth, Preceeding) ->
+  case start_of_expr(Preceeding) of
+    {error, _} ->
+      IndentWidth;
+    {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
+      StartCol - 1 + IndentWidth;
+    {ok, {Preceeding1, [#{type := '(', start := {_, StartCol}}|_]}} ->
+      case start_of_call(Preceeding1) of
+        undefined ->
+          StartCol - 1 + IndentWidth;
+        #{start := {_, FunRefStartCol}} ->
+          FunRefStartCol - 1 + IndentWidth
+      end;
+    {ok, {A, [#{start := {_, StartCol}}|_]}} ->
+      io:fwrite(user, <<"~p ~p ~p: A = ~p~n">>, [self(), ?MODULE, ?LINE, A]),
+      StartCol - 1 + IndentWidth
   end.
 
 n_next_code_tokens(N, Tokens) ->

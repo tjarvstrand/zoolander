@@ -101,35 +101,35 @@ format_expression_test_() ->
 
   ].
 
-%% format_string_test_() ->
-%%   [ ?assertFmt("\"\"")
+format_string_test_() ->
+  [ ?assertFmt("\"\"")
 
-%%   , ?assertFmt("\"a\"")
+  , ?assertFmt("\"a\"")
 
-%%   , ?assertFmt( "\"a\"+\n"
-%%                 "\"a\""
-%%               , [{expressions, 0}])
+  , ?assertFmt( "\"a\"+\n"
+                "  \"a\""
+              , [{expressions, 0}])
 
-%%   , ?assertFmt( "\"a\"\n"
-%%                 "\"a\"\n"
-%%                 "\"a\"\n"
-%%                 "\"a\""
-%%               , [{expressions, 0}])
+  , ?assertFmt( "\"a\"\n"
+                "\"a\"\n"
+                "\"a\"\n"
+                "\"a\""
+              , [{expressions, 0}])
 
-%%   , ?assertFmt( "A = \"a\"\n"
-%%                 "    \"a\""
-%%               , [{expressions, 0}])
+  , ?assertFmt( "A = \"a\"\n"
+                "    \"a\""
+              , [{expressions, 0}])
 
-%%   , ?assertFmt( "A = \"a\"\n"
-%%                 "    \"a\"\n"
-%%                 "    \"a\"\n"
-%%                 "    \"a\""
-%%               , [{expressions, 0}])
+  , ?assertFmt( "A = \"a\"\n"
+                "    \"a\"\n"
+                "    \"a\"\n"
+                "    \"a\""
+              , [{expressions, 0}])
 
-%%   , ?assertFmt("[\"a\"\n"
-%%                " \"a\"]",
-%%                [{expressions, 0}])
-%%   ].
+  , ?assertFmt("[\"a\"\n"
+               " \"a\"]",
+               [{expressions, 0}])
+  ].
 
 format_parameter_list_test_() ->
   [ ?assertFmt( "(A, B)"
