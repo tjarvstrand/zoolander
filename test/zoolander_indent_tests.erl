@@ -90,6 +90,12 @@ format_expression_test_() ->
                 "c"
               , [{expressions, 0}])
 
+
+  , ?assertFmt( "A = d,\n"
+                "B =\n"
+                "  \"abc\"\n"
+              , [{expressions, 0}])
+
     % erl_parse splits whitespace of more than 16 spaces
   , ?assertFmt( "abcdefghijklmno:p( a,\n"
                 "                   b),"
@@ -98,6 +104,9 @@ format_expression_test_() ->
   , ?assertFmt("catch\n"
                "  a + b"
               , [{expressions, 0}])
+
+  , ?assertFmt("a()->\n"
+               "  catch b:c().")
 
   ].
 
@@ -381,6 +390,24 @@ format_block_test_() ->
                 "end"
               , [{expressions, 0}])
 
+  , ?assertFmt( "try\n"
+                "  catch 1 + a\n"
+                "catch\n"
+                "  error:_ ->\n"
+                "    ok\n"
+                "end"
+              , [{expressions, 0}])
+
+
+  , ?assertFmt( "try a of\n"
+                "  b ->\n"
+                "    c\n"
+                "catch\n"
+                "  _ -> d\n"
+                "after\n"
+                "  e:f()\n"
+                "end\n"
+              , [{expressions, 0}])
 
   , ?assertFmt( "try a of\n"
                 "  b ->\n"
@@ -462,6 +489,21 @@ format_function_test_() ->
 
   , ?assertFmt( "foo(a,b)-> c,\n"
                 "           d."
+              , [])
+
+  , ?assertFmt( "a(A, B) when B > 0 ->\n"
+                "  case b() of\n"
+                "    {ok, C} ->\n"
+                "      C;\n"
+                "    D ->\n"
+                "      error\n"
+                "  end;\n"
+                "a(A, B) ->\n"
+                "  ok."
+              , [])
+
+  , ?assertFmt( "foo(a)-> b;\n"
+                "foo(c)-> d."
               , [])
 
   , ?assertFmt( "fun()-> a end"

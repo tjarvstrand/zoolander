@@ -149,8 +149,8 @@ indent( [Token|Tokens]
 
 level(IndentWidth, Preceeding, Following) ->
   case Following of
-    [#{type := Type}|_Rest] when Type =:= ',' orelse
-                                 Type =:= '|' ->
+    [#{type := Type}|_] when Type =:= ',' orelse
+                             Type =:= '|' ->
       case
         back_to( ?BLOCK_START_MATCHES
                  ++ ?SEQUENCE_START_MATCHES
@@ -163,7 +163,7 @@ level(IndentWidth, Preceeding, Following) ->
           0
       end;
     [#{type := Type}|_Rest] when Type =:= '||' ->
-      {ok, {[#{start := {_, ListStartCol}}], _}} = back_to(['['], Preceeding),
+      {ok, {[#{start := {_, ListStartCol}}|_], _}} = back_to(['['], Preceeding),
       ListStartCol - 1;
     [#{type := ')'}|_] ->
       {ok, {[#{start := {_, ParenStartCol}}|Preceeding1], _}} =
@@ -190,7 +190,7 @@ level(IndentWidth, Preceeding, Following) ->
                                                         , Preceeding),
       StartCol - 1;
     [#{type := Type}|_] when Type =:= 'after' ->
-      {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['receive']
+      {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['receive', 'try']
                                                         , Preceeding),
       StartCol - 1;
     [#{type := Type}|_] when Type =:= string ->
@@ -198,109 +198,116 @@ level(IndentWidth, Preceeding, Following) ->
         [#{type := string, start := {_, StringStartCol}}|_] ->
           StringStartCol - 1;
         _ ->
-          indent_normal_expr(IndentWidth, Preceeding)
+          level_based_on_preceeding(IndentWidth, Preceeding, Following)
       end;
     [#{type := Type} = Token|Rest] when Type =:= 'catch' ->
-      case forward_to( ['end', 'catch'], [Token|Preceeding], Rest) of
+      case forward_to(['end', 'catch'], [Token|Preceeding], Rest) of
         {ok, {_, [#{type := 'end'}|_]}} -> %% Indent from try
           {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['try']
                                                             , Preceeding),
           StartCol - 1;
         _ -> %% Indent as normal expression,
-          indent_normal_expr(IndentWidth, Preceeding)
+          level_based_on_preceeding(IndentWidth, Preceeding, Following)
       end;
     [#{type := dot}|_] ->
       0;
     _ ->
-      case Preceeding of
-        [#{type := Type}|Rest] when Type =:= '=' ->
-          lvl_at_start_of_expr(Rest) + IndentWidth;
-        [#{type := Type}|Rest] when Type =:= '|' orelse
-                                    Type =:= '||' ->
-          lvl_at_start_of_expr(Rest, match_as_single_expr);
-        [#{type := Type}|Rest] when Type =:= ',' ->
-          lvl_at_start_of_expr(Rest, match_as_single_expr);
-        [#{type := Type, start := {_, ParenStartCol}}|Rest] when Type =:= '(' ->
-          case start_of_call(Rest) of
-            undefined -> ParenStartCol - 1 + IndentWidth;
-            #{start := {_, FunRefStartCol}} -> FunRefStartCol - 1 + IndentWidth
-          end;
-
-        [#{type := Type}|Rest] when Type =:= 'of' ->
-          {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['try', 'case']
-                                                            , Rest),
-          StartCol - 1 + IndentWidth;
-        [#{type := Type}|Rest] when Type =:= 'catch' ->
-          case back_to( ['try'], Rest) of
-            {error, _} ->
-              IndentWidth;
-            {ok, {[#{start := {_, StartCol}}|_], _}} ->
-              StartCol - 1 + IndentWidth
-          end;
-        [#{type := Type}|Rest] when Type =:= ';' ->
-          case back_to([dot, 'of', 'if', 'receive', 'fun', 'after', 'when'], Rest, Following) of
-            {ok, {_, [#{start := {_, ClauseStartCol}}|_]}} ->
-              ClauseStartCol - 1;
-            {error, {[], _}} ->
-              IndentWidth
-          end;
-        [#{type := Type}|Rest] when Type =:= '->' ->
-          case
-            back_to( [ dot
-                     , 'of'
-                     , 'if'
-                     , 'receive'
-                     , 'fun'
-                     , 'after'
-                     , ['-', atom, atom]]
-                   , Rest
-                   , Following)
-          of
-            {ok, {[#{type := 'fun', start := {_, FunStartCol}}|_], _}} ->
-              FunStartCol - 1 + IndentWidth;
-            {ok, {Preceeding1, [#{start := {_, FollowingStartCol}}|_]}} ->
-              %% Check if were in a '-spec' or '-type'
-              case n_next_code_tokens(3, Preceeding1) of
-                [ #{type := atom, start := {_, PreceedingStartCol}}
-                , #{type := atom}
-                , #{type := '-'}] ->
-                  PreceedingStartCol - 1 + IndentWidth;
-                _ ->
-                  FollowingStartCol - 1 + IndentWidth
-              end;
-            {error, {[], _}} ->
-              IndentWidth
-          end;
-        [#{type := Type, 'end' := {_, EndCol} }|_] when Type =:= '{' orelse
-                                                        Type =:= '[' orelse
-                                                        Type =:= '<<' ->
-          EndCol - 1;
-        [] ->
-          0;
-        [#{type := dot}|_] ->
-          0;
-        _ ->
-          indent_normal_expr(IndentWidth, Preceeding)
-      end
+      level_based_on_preceeding(IndentWidth, Preceeding, Following)
   end.
 
 
-indent_normal_expr(IndentWidth, Preceeding) ->
-  case start_of_expr(Preceeding) of
-    {error, _} ->
-      IndentWidth;
-    {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
-      StartCol - 1 + IndentWidth;
-    {ok, {Preceeding1, [#{type := '(', start := {_, StartCol}}|_]}} ->
-      case start_of_call(Preceeding1) of
-        undefined ->
-          StartCol - 1 + IndentWidth;
-        #{start := {_, FunRefStartCol}} ->
-          FunRefStartCol - 1 + IndentWidth
+level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
+  case Preceeding of
+    [#{type := Type}|Rest] when Type =:= '=' ->
+      lvl_at_start_of_expr(Rest) + IndentWidth;
+    [#{type := Type}|Rest] when Type =:= '|' orelse
+                                Type =:= '||' ->
+      lvl_at_start_of_expr(Rest, match_as_single_expr);
+    [#{type := Type}|Rest] when Type =:= ',' ->
+      lvl_at_start_of_expr(Rest, match_as_single_expr);
+    [#{type := Type, start := {_, ParenStartCol}}|Rest] when Type =:= '(' ->
+      case start_of_call(Rest) of
+        undefined -> ParenStartCol - 1 + IndentWidth;
+        #{start := {_, FunRefStartCol}} -> FunRefStartCol - 1 + IndentWidth
       end;
-    {ok, {A, [#{start := {_, StartCol}}|_]}} ->
-      io:fwrite(user, <<"~p ~p ~p: A = ~p~n">>, [self(), ?MODULE, ?LINE, A]),
-      StartCol - 1 + IndentWidth
+
+    [#{type := Type}|Rest] when Type =:= 'of' ->
+      {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['try', 'case']
+                                                        , Rest),
+      StartCol - 1 + IndentWidth;
+    [#{type := Type}|Rest] when Type =:= 'catch' ->
+      case back_to( ['try'], Rest) of
+        {error, _} ->
+          IndentWidth;
+        {ok, {[#{start := {_, StartCol}}|_], _}} ->
+          StartCol - 1 + IndentWidth
+      end;
+    [#{type := Type}|Rest] when Type =:= ';' ->
+      case back_to(['when', '->'], Rest, Following) of
+        {ok, {[#{type := 'when'}|_], [#{start := {_, ClauseStartCol}}|_]}} ->
+          %% We're in a guard
+          ClauseStartCol - 1;
+        {ok, {Preceeding1, Following1}} ->
+          %% We're not in a guard, keep going until the start of the clause
+          case back_to([dot, 'of', 'if', 'receive', 'fun', 'after'], Preceeding1, Following1) of
+            {ok, {_, [#{start := {_, ClauseStartCol}}|_]}} ->
+              ClauseStartCol - 1;
+            {error, {[], _}} ->
+              0
+          end
+      end;
+    [#{type := Type}|Rest] when Type =:= '->' ->
+      case
+        back_to( [ dot
+                 , 'of'
+                 , 'if'
+                 , 'receive'
+                 , 'fun'
+                 , 'after'
+                 , 'catch'
+                 , ['-', atom, atom]]
+               , Rest
+               , Following)
+      of
+        {ok, {[#{type := 'fun', start := {_, FunStartCol}}|_], _}} ->
+          FunStartCol - 1 + IndentWidth;
+        {ok, {Preceeding1, [#{start := {_, FollowingStartCol}}|_]}} ->
+          %% Check if were in a '-spec' or '-type'
+          case n_next_code_tokens(3, Preceeding1) of
+            [ #{type := atom, start := {_, PreceedingStartCol}}
+            , #{type := atom}
+            , #{type := '-'}] ->
+              PreceedingStartCol - 1 + IndentWidth;
+            _ ->
+              FollowingStartCol - 1 + IndentWidth
+          end;
+        {error, {[], _}} ->
+          IndentWidth
+      end;
+    [#{type := Type, 'end' := {_, EndCol} }|_] when Type =:= '{' orelse
+                                                    Type =:= '[' orelse
+                                                    Type =:= '<<' ->
+      EndCol - 1;
+    [] ->
+      0;
+    [#{type := dot}|_] ->
+      0;
+    _ ->
+      case start_of_expr(Preceeding) of
+        {error, _} ->
+          IndentWidth;
+        {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
+          StartCol - 1 + IndentWidth;
+        {ok, {Preceeding1, [#{type := '(', start := {_, StartCol}}|_]}} ->
+          case start_of_call(Preceeding1) of
+            undefined ->
+              StartCol - 1 + IndentWidth;
+            #{start := {_, FunRefStartCol}} ->
+              FunRefStartCol - 1 + IndentWidth
+          end;
+        {ok, {_, [#{start := {_, StartCol}}|_]}} ->
+          StartCol - 1 + IndentWidth
+      end
   end.
 
 n_next_code_tokens(N, Tokens) ->
@@ -497,8 +504,8 @@ forward_to( Matches
   forward_to(Matches, [Token|Preceeding], Following, Ctx);
 
 forward_to( Matches
-       , [#{type := Type} = Token|Preceeding]
-       , Following
+       , Preceeding
+       , [#{type := Type} = Token|Following]
        , Ctx) when ?BLOCK_START_P(Type) orelse
                    ?SEQUENCE_START_P(Type) ->
   forward_to(Matches, [Token|Preceeding], Following, [Type|Ctx]);
@@ -521,8 +528,8 @@ forward_to( Matches
   end;
 
 forward_to( Matches
-       , [Token|Preceeding]
-       , Following
+       , Preceeding
+       , [Token|Following]
        , Ctx) ->
   forward_to(Matches, [Token|Preceeding], Following, Ctx).
 
@@ -585,9 +592,6 @@ corresponding_delimiter('(')  -> ')';
 corresponding_delimiter('[')  -> ']';
 corresponding_delimiter('{')  -> '}';
 corresponding_delimiter('<<') -> '>>'.
-
-
-
 
 %%%_* Tests ===================================================================
 
