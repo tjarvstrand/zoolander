@@ -110,53 +110,38 @@ format(Code, Options, _Ctx) ->
 indent([], _Opts, Done) ->
   lists:reverse(Done);
 
-indent( [ #{type := white_space, text := "\n" ++ _} = Token0
+indent( [ #{type := white_space, text := "\n" ++ _}
         , #{type := white_space, text := "\n" ++ _}|_] = Tokens0
       , Opts
       , Done) ->
-  %io:fwrite(user, <<"-------------------~n">>, []),
-  %io:fwrite(user, <<"~p ~p ~p: Token0 = ~p~n">>, [self(), ?MODULE, ?LINE, Token0]),
   [Token|Tokens] = indent_current_line_to(0, Tokens0, Opts),
   indent(Tokens, Opts, [Token|Done]);
 
-indent( [ #{type := white_space, text := "\n" ++ _} = Token0] = Tokens0
+indent( [ #{type := white_space, text := "\n" ++ _}] = Tokens0
       , Opts
       , Done) ->
-  %io:fwrite(user, <<"-------------------~n">>, []),
-  %io:fwrite(user, <<"~p ~p ~p: Token0 = ~p~n">>, [self(), ?MODULE, ?LINE, Token0]),
   [Token|Tokens] = indent_current_line_to(0, Tokens0, Opts),
   indent(Tokens, Opts, [Token|Done]);
 
-indent( [#{type := white_space, text := "\n" ++ _} = Token0|_] = Tokens0
+indent( [#{type := white_space, text := "\n" ++ _}|_] = Tokens0
       , #{indent_width := IndentWidth} = Opts
       , Done) ->
-  %io:fwrite(user, <<"-------------------~n">>, []),
-  %io:fwrite(user, <<"~p ~p ~p: Token0 = ~p~n">>, [self(), ?MODULE, ?LINE, Token0]),
   NewLvl = level( IndentWidth
                 , drop_non_code_tokens(Done)
                 , drop_non_code_tokens(Tokens0)),
-  %io:fwrite(user, <<"~p ~p ~p: NewLvl = ~p~n">>, [self(), ?MODULE, ?LINE, NewLvl]),
   [Token|Tokens] = indent_current_line_to(NewLvl, Tokens0, Opts),
   indent(Tokens, Opts, [Token|Done]);
 
 indent( [Token|Tokens]
       , Opts
       , Done) ->
-  %io:fwrite(user, <<"-------------------~n">>, []),
-  %io:fwrite(user, <<"~p ~p ~p: Token = ~p~n">>, [self(), ?MODULE, ?LINE, Token]),
   indent(Tokens, Opts, [Token|Done]).
-
 
 level(IndentWidth, Preceeding, Following) ->
   case Following of
     [#{type := Type}|_] when Type =:= ',' orelse
                              Type =:= '|' ->
-      case
-        back_to( ?BLOCK_START_MATCHES
-                 ++ ?SEQUENCE_START_MATCHES
-                 ++ ['of', 'after', 'when', '->']
-               , Preceeding)
-      of
+      case back_to_start_of_first_expr(Preceeding, Following) of
         {ok, {[#{'end' := {_, EndCol}}|_], _}} ->
           EndCol - 2;
         _ ->
@@ -182,8 +167,8 @@ level(IndentWidth, Preceeding, Following) ->
     [#{type := Type}|_] when Type =:= '->' ->
       lvl_at_start_of_expr(Preceeding);
     [#{type := Type}|_] when Type =:= 'end' ->
-      {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ?BLOCK_START_MATCHES
-                                                        , Preceeding),
+      {ok, {[#{start := {_, StartCol}}|_], _}} =
+        back_to( ?BLOCK_START_MATCHES, Preceeding),
       StartCol - 1;
     [#{type := Type}|_] when Type =:= 'of' ->
       {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['try', 'case']
@@ -193,6 +178,18 @@ level(IndentWidth, Preceeding, Following) ->
       {ok, {[#{start := {_, StartCol}}|_], _}} = back_to( ['receive', 'try']
                                                         , Preceeding),
       StartCol - 1;
+    [#{type := Type}|_] when Type =:= 'when' ->
+      {ok, {_, [#{start := {_, StartCol}}|_]}} = back_to( [ dot
+                                                          , 'of'
+                                                          , 'if'
+                                                          , 'receive'
+                                                          , 'fun'
+                                                          , 'after'
+                                                          , 'catch'
+                                                          , ['-', atom, atom]]
+                                                        , Preceeding
+                                                        , Following),
+      StartCol - 1 + IndentWidth;
     [#{type := Type}|_] when Type =:= string ->
       case Preceeding of
         [#{type := string, start := {_, StringStartCol}}|_] ->
@@ -223,8 +220,11 @@ level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
     [#{type := Type}|Rest] when Type =:= '|' orelse
                                 Type =:= '||' ->
       lvl_at_start_of_expr(Rest, match_as_single_expr);
-    [#{type := Type}|Rest] when Type =:= ',' ->
-      lvl_at_start_of_expr(Rest, match_as_single_expr);
+    [#{type := Type}|_] when Type =:= ',' ->
+      case back_to_start_of_first_expr(Preceeding, Following) of
+        {ok, {_, [#{start := {_, ExprStartCol}}|_]}} -> ExprStartCol - 1;
+        {error, _}                                   -> 0
+      end;
     [#{type := Type, start := {_, ParenStartCol}}|Rest] when Type =:= '(' ->
       case start_of_call(Rest) of
         undefined -> ParenStartCol - 1 + IndentWidth;
@@ -249,7 +249,11 @@ level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
           ClauseStartCol - 1;
         {ok, {Preceeding1, Following1}} ->
           %% We're not in a guard, keep going until the start of the clause
-          case back_to([dot, 'of', 'if', 'receive', 'fun', 'after'], Preceeding1, Following1) of
+          case
+            back_to([dot, 'of', 'if', 'receive', 'fun', 'after', 'catch', ';']
+                   , Preceeding1
+                   , Following1)
+          of
             {ok, {_, [#{start := {_, ClauseStartCol}}|_]}} ->
               ClauseStartCol - 1;
             {error, {[], _}} ->
@@ -257,20 +261,32 @@ level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
           end
       end;
     [#{type := Type}|Rest] when Type =:= '->' ->
-      case
-        back_to( [ dot
-                 , 'of'
-                 , 'if'
-                 , 'receive'
-                 , 'fun'
-                 , 'after'
-                 , 'catch'
-                 , ['-', atom, atom]]
-               , Rest
-               , Following)
-      of
-        {ok, {[#{type := 'fun', start := {_, FunStartCol}}|_], _}} ->
-          FunStartCol - 1 + IndentWidth;
+      ClauseMatches = [ dot
+                      , 'of'
+                      , 'if'
+                      , 'receive'
+                      , 'fun'
+                      , 'after'
+                      , 'catch'
+                      , '->'
+                      , ';'
+                      , ['-', atom, atom]],
+      case back_to(ClauseMatches, Rest) of
+        {ok, { [#{type := ';'}|_] = Preceeding1, Following1}} ->
+          %% Check if we're in a guard
+          case back_to(['when', '->'], Preceeding1, Following1) of
+            {ok, {[#{type := 'when'}|Preceeding2], _}} ->
+              %% We're in a guard, keep going until the end of previous clause
+              {ok, {_, [#{start := {_, FollowingStartCol}}|_]}} =
+                back_to(ClauseMatches, Preceeding2),
+              FollowingStartCol - 1 + IndentWidth;
+            {ok, {_, [#{start := {_, FollowingStartCol}}|_]}} ->
+              %% We're not in a guard
+              FollowingStartCol - 1
+          end;
+          %% FollowingStartCol - 1 + IndentWidth;
+        {ok, {[#{type := '->'}|_], [#{start := {_, FollowingStartCol}}|_]}} ->
+          FollowingStartCol - 1;
         {ok, {Preceeding1, [#{start := {_, FollowingStartCol}}|_]}} ->
           %% Check if were in a '-spec' or '-type'
           case n_next_code_tokens(3, Preceeding1) of
@@ -293,7 +309,7 @@ level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
     [#{type := dot}|_] ->
       0;
     _ ->
-      case start_of_expr(Preceeding) of
+      case back_to_start_of_expr(Preceeding) of
         {error, _} ->
           IndentWidth;
         {ok, {[#{start := {_, StartCol}}|_] = Preceeding, _}} ->
@@ -399,16 +415,33 @@ lvl_at_start_of_expr(Tokens) ->
   lvl_at_start_of_expr(Tokens, undefined).
 
 lvl_at_start_of_expr(Tokens, Mode) ->
-  case start_of_expr(Tokens, Mode) of
+  case back_to_start_of_expr(Tokens, Mode) of
     {error, _}                      -> 0;
-    {ok, {_, [#{start := {_, StartCol}}|_]}} -> StartCol - 1
+    {ok, {Preceeding, [#{start := {_, FollowingStartCol}}|_]}} ->
+      %% Check if were in a '-spec' or '-type'
+      case n_next_code_tokens(3, Preceeding) of
+        [ #{type := atom, start := {_, PreceedingStartCol}}
+        , #{type := atom}
+        , #{type := '-'}] ->
+          PreceedingStartCol - 1;
+        _ ->
+          FollowingStartCol - 1
+      end
   end.
 
-start_of_expr(Tokens) ->
-    start_of_expr(Tokens, undefined).
+back_to_start_of_first_expr(Preceeding, Following) ->
+  back_to( ?BLOCK_START_MATCHES
+           ++ ?SEQUENCE_START_MATCHES
+           ++ ['of', 'after', 'when', '->']
+         , Preceeding
+         , Following).
 
-start_of_expr(Tokens, Mode) ->
+back_to_start_of_expr(Tokens) ->
+    back_to_start_of_expr(Tokens, undefined).
+
+back_to_start_of_expr(Tokens, Mode) ->
   ExprBreak0 = [ [atom, atom]
+               , 'fun'
                , 'case'
                , 'try'
                , 'receive'
@@ -422,7 +455,7 @@ start_of_expr(Tokens, Mode) ->
                , '['
                , '('
                , '<<'
-               , ''
+               , ','
                , ';'
                , dot],
     ExprBreak = case Mode =:= match_as_single_expr of
@@ -454,14 +487,6 @@ back_to( Matches
   back_to(Matches, Preceeding, [Token|Following], Ctx);
 
 back_to( Matches
-       , [#{type := Type} = Token|Preceeding]
-       , Following
-       , Ctx) when ?BLOCK_END_P(Type) orelse
-                   ?SEQUENCE_END_P(Type) orelse
-                   ?FORM_END_P(Type) ->
-  back_to(Matches, Preceeding, [Token|Following], [Type|Ctx]);
-
-back_to( Matches
        , [#{type := Type} = Token|Preceeding0] = Preceeding
        , Following
        , [] = Ctx) ->
@@ -475,9 +500,23 @@ back_to( Matches
                   end
                 , Matches)
   of
-    [] -> back_to(Matches, Preceeding0, [Token|Following], Ctx);
-    _  -> {ok, {Preceeding, Following}}
+    [] when ?BLOCK_END_P(Type) orelse
+            ?SEQUENCE_END_P(Type) orelse
+            ?FORM_END_P(Type) ->
+      back_to(Matches, Preceeding0, [Token|Following], [Type|Ctx]);
+    [] ->
+      back_to(Matches, Preceeding0, [Token|Following], Ctx);
+    _  ->
+      {ok, {Preceeding, Following}}
   end;
+
+back_to( Matches
+       , [#{type := Type} = Token|Preceeding]
+       , Following
+       , Ctx) when ?BLOCK_END_P(Type) orelse
+                   ?SEQUENCE_END_P(Type) orelse
+                   ?FORM_END_P(Type) ->
+  back_to(Matches, Preceeding, [Token|Following], [Type|Ctx]);
 
 back_to( Matches
        , [Token|Preceeding]
@@ -594,83 +633,6 @@ corresponding_delimiter('{')  -> '}';
 corresponding_delimiter('<<') -> '>>'.
 
 %%%_* Tests ===================================================================
-
-%% start_of_expr_test_() ->
-%%   [ ?_assertEqual(undefined, string(fun start_of_expr/1, ""))
-%%   , ?_assertEqual(undefined, string(fun start_of_expr/1, "case"))
-%%   , ?_assertEqual(undefined, string(fun start_of_expr/1, "fun("))
-%%   , ?_assertEqual(undefined, string(fun start_of_expr/1, "fun() ->"))
-%%   , ?_assertEqual(undefined, string(fun start_of_expr/1, "("))
-%%   , ?_assertEqual(undefined, string(fun start_of_expr/1, "["))
-
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "case a"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "( a"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "[ a"))
-
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "case b, a"))
-%%   , ?_assertEqual("case", string(fun start_of_expr/1, "case a of b -> c end"))
-%%   , ?_assertEqual("fun", string(fun start_of_expr/1, "fun()"))
-%%   , ?_assertEqual("fun", string(fun start_of_expr/1, "fun() -> a end"))
-%%   , ?_assertEqual("foo", string(fun start_of_expr/1, "foo:bar()"))
-%%   , ?_assertEqual("foo", string(fun start_of_expr/1, "foo()"))
-%%   , ?_assertEqual("fun", string(fun start_of_expr/1, "fun() -> a end"))
-%%   , ?_assertEqual("fun", string(fun start_of_expr/1, "fun() when A =:= B -> a end"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "when b, a"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "( b, a"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "[ b, a"))
-
-%%   , ?_assertEqual("c", string(fun start_of_expr/1, "case b of a -> c"))
-
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "a + (1 + 2)"))
-%%   , ?_assertEqual("a", string(fun start_of_expr/1, "(a + (1 + 2)"))
-%%   , ?_assertEqual("A", string(fun start_of_expr/1, "A + \"abc\" \"cde\""))
-
-%%   , ?_assertEqual("catch", string(fun start_of_expr/1, "catch A()"))
-
-%%   , ?_assertEqual("b", string(fun start_of_expr/1, "A = b"))
-%%   ].
-
-%% start_of_call_component_test_() ->
-%%   [ ?_assertEqual(undefined, string(fun start_of_call_component/1, ""))
-%%   , ?_assertEqual("a", string(fun start_of_call_component/1, "a"))
-%%   , ?_assertEqual("a", string(fun start_of_call_component/1, "a/1"))
-%%   , ?_assertEqual("b", string(fun start_of_call_component/1, "a:b"))
-%%   , ?_assertEqual("(", string(fun start_of_call_component/1, "a:(foo:bar())"))
-%%   , ?_assertEqual("?", string(fun start_of_call_component/1, "?a"))
-%%   , ?_assertEqual("?", string(fun start_of_call_component/1, "?a(a)"))
-%%   ].
-
-%% start_of_call_test_() ->
-%%   [ ?_assertEqual(undefined, string(fun start_of_call_component/1, ""))
-%%   , ?_assertEqual("a", string(fun start_of_call/1, "a"))
-%%   , ?_assertEqual("a", string(fun start_of_call/1, "a:b"))
-%%   , ?_assertEqual("a", string(fun start_of_call/1, "a:(foo:bar())"))
-%%   , ?_assertEqual("?", string(fun start_of_call/1, "?a(a)"))
-%%   , ?_assertEqual("fun", string(fun start_of_call/1, "fun"))
-%%   , ?_assertEqual("fun", string(fun start_of_call/1, "fun foo/1"))
-%%   , ?_assertEqual("fun", string(fun start_of_call/1, "fun foo:bar/1"))
-
-%%   , ?_assertEqual("?", string(fun start_of_call/1, "?a(a)"))
-%%   , ?_assertEqual("?", string(fun start_of_call/1, "?a(a)"))
-
-%%   , ?_assertEqual("a", string(fun start_of_call/1, "-spec a"))
-%%   , ?_assertEqual("a", string(fun start_of_call/1, "-spec a:b"))
-%%   ].
-
-%% adjust_whitespace_width_test_() ->
-%%   [ ?_assertEqual( #{text => "\n"}
-%%                  , adjust_whitespace_width(2, -2, #{text => "\n  "}))
-%%   ].
-
-
-%%%_* Test helpers =============================================================
-
-%% string(Fun, String) ->
-%%   Tokens0 = zoolander_code:lex(String),
-%%   case Fun(lists:reverse(Tokens0)) of
-%%     #{text := Text} -> Text;
-%%     undefined -> undefined
-%%   end.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

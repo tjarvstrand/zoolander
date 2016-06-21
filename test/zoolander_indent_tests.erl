@@ -54,7 +54,6 @@ format_basic_test_() ->
   [ ?assertFmt("")
   ].
 
-
 format_expression_test_() ->
   [ ?assertFmt("a")
 
@@ -270,9 +269,10 @@ format_list_test_() ->
                 "    C]"
               , [{expressions, 0}])
 
-  , ?assertFmt( "[ A\n"
-                ",B],\n"
-                "C"
+  , ?assertFmt("->\n"
+               "  [ A\n"
+               "  ,B],\n"
+               "  C"
               , [{expressions, 0}])
 
   , ?assertFmt( "[\n"
@@ -390,13 +390,27 @@ format_block_test_() ->
                 "end"
               , [{expressions, 0}])
 
-  , ?assertFmt( "try\n"
-                "  catch 1 + a\n"
-                "catch\n"
-                "  error:_ ->\n"
-                "    ok\n"
-                "end"
+  , ?assertFmt( "try"
+                "  mochijson2:decode(Body)\n"
+                "catch _:_ ->\n"
+                "        throw(bad_body)\n"
+                "end."
               , [{expressions, 0}])
+
+  , ?assertFmt( "catch\n"
+                "  error:_ ->\n"
+                "    ok;\n"
+                "  throw:_ ->\n"
+                "    ok"
+              , [{expressions, 0}])
+
+  , ?assertFmt( "catch\n"
+                "  error:_ ->\n"
+                "    catch a;\n"
+                "  throw:_ ->\n"
+                "    ok"
+              , [{expressions, 0}])
+
 
 
   , ?assertFmt( "try a of\n"
@@ -452,7 +466,9 @@ format_block_test_() ->
 
 format_clause_test_() ->
   [ ?assertFmt( "->ok", [{clause, 0}])
+
   , ?assertFmt( "-> ok" , [{clause, 0}])
+
   , ?assertFmt( "-> a,\n"
                 "   b"
               , [{clause, 0}, {clauses, 0}])
@@ -515,76 +531,91 @@ format_function_test_() ->
               , [{expressions, 0}])
 
   , ?assertFmt( "fun()->\n"
-                "  a,\n"
-                "  b\n"
+                "     a,\n"
+                "     b\n"
                 "end"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun()->\n"
-                "  a,\n"
-                "  b\n"
+                "     a,\n"
+                "     b\n"
                 "end,"
                 "a"
               , [{expressions, 0}])
 
 
   , ?assertFmt( "fun() when A =:= B ->\n"
-                "  a\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun() when A =:= B,\n"
                 "           C =:= D ->\n"
-                "  a\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun() when A =:= B;\n"
                 "           C =:= D ->\n"
-                "  a\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
 
   , ?assertFmt( "fun() when A =:= B\n"
-                "         , C =:= D ->"
-                "  a\n"
+                "         , C =:= D ->\n"
+                "     a\n"
+                "end"
+              , [{expressions, 0}])
+
+  , ?assertFmt( "fun(A) ->\n"
+                "     A;\n"
+                "   (B) ->\n"
+                "     B\n"
+                "end"
+              , [{expressions, 0}])
+
+  , ?assertFmt( "fun(A) when A =:= B\n"
+                "          , C =:= D ->\n"
+                "     A;\n"
+                "   (B) ->\n"
+                "     B\n"
                 "end"
               , [{expressions, 0}])
 
 
   , ?assertFmt( "fun()\n"
-                "  when"
+                "     when"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun()\n"
-                "  when A =:= B ->\n"
-                "  a\n"
+                "     when A =:= B ->\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun()\n"
-                "  when\n"
-                "    A =:= B ->\n"
-                "  a\n"
+                "     when\n"
+                "       A =:= B ->\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
   , ?assertFmt( "fun()\n"
-                "  when\n"
-                "    A=:=\n"
-                "      B ->\n"
-                "  a\n"
+                "     when\n"
+                "       A=:=\n"
+                "         B ->\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
 
   , ?assertFmt( "fun()\n"
-                "  when\n"
-                "    A=:=\n"
-                "      B,\n"
-                "    C =:= D ->\n"
-                "  a\n"
+                "     when\n"
+                "       A=:=\n"
+                "         B,\n"
+                "       C =:= D ->\n"
+                "     a\n"
                 "end"
               , [{expressions, 0}])
 
@@ -715,6 +746,12 @@ format_spec_test_() ->
   , ?assertFmt( "-spec a(A::a,B::b())->C::c\n"
                 "                     |D::d()"
               , [])
+
+
+  , ?assertFmt( "-spec abc()\n"
+                "      ->d."
+              , [])
+
 
   , ?assertFmt("-spec(a(b(),fun(()->A))->A|a).")
   , ?assertFmt("-spec(a(b(),fun(()->A))->A\n"
