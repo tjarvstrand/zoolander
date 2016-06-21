@@ -272,17 +272,17 @@ level_based_on_preceeding(IndentWidth, Preceeding, Following) ->
                       , ';'
                       , ['-', atom, atom]],
       case back_to(ClauseMatches, Rest) of
-        {ok, { [#{type := ';'}|_] = Preceeding1, Following1}} ->
+        {ok, { [#{type := ';'}|_] = Preceeding1, [#{start := {_, FollowingStartCol0}}|_] = Following1}} ->
           %% Check if we're in a guard
           case back_to(['when', '->'], Preceeding1, Following1) of
             {ok, {[#{type := 'when'}|Preceeding2], _}} ->
               %% We're in a guard, keep going until the end of previous clause
-              {ok, {_, [#{start := {_, FollowingStartCol}}|_]}} =
+              {ok, {_, [#{start := {_, FollowingStartCol1}}|_]}} =
                 back_to(ClauseMatches, Preceeding2),
-              FollowingStartCol - 1 + IndentWidth;
-            {ok, {_, [#{start := {_, FollowingStartCol}}|_]}} ->
+              FollowingStartCol1 - 1 + IndentWidth;
+            {ok, {_, _}} ->
               %% We're not in a guard
-              FollowingStartCol - 1
+              FollowingStartCol0 - 1 + IndentWidth
           end;
           %% FollowingStartCol - 1 + IndentWidth;
         {ok, {[#{type := '->'}|_], [#{start := {_, FollowingStartCol}}|_]}} ->

@@ -382,6 +382,12 @@ format_block_test_() ->
                 "  end."
               , [])
 
+  , ?assertFmt( "case A of\n"
+                "  true  -> B;\n"
+                "  false ->\n"
+                "    C"
+                "end;\n"
+              , [])
 
   , ?assertFmt( "try\n"
                 "  catch 1 + a\n"
